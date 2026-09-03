@@ -1,159 +1,534 @@
-````markdown
+
 # SkillProof
 
 > Prove what you built.
 
-SkillProof is an AI-powered project evidence analysis platform that converts student project evidence into an evidence-backed skill profile.
+SkillProof is an AI-powered project evidence analysis platform that connects student project claims to concrete repository evidence.
+
+Instead of simply accepting claims such as:
+
+> "I built a machine learning model."
+
+SkillProof asks:
+
+> **What evidence in the submitted project actually supports that claim?**
 
 The core idea is:
 
 **CLAIM ↔ EVIDENCE**
 
-SkillProof compares what a student claims to have built with the evidence they submit and identifies how strongly the evidence supports those claims.
+SkillProof analyzes submitted project evidence using Google Gemini and produces a structured, evidence-grounded assessment of the student's technical claims.
+
+---
 
 ## Problem
 
-Students can claim experience with technologies or skills in their projects, but evaluating whether their submitted work actually supports those claims can be difficult and time-consuming.
+Students often describe technologies and skills in resumes, project reports, and portfolios, but evaluating whether those claims are supported by their actual project work can be difficult and time-consuming.
+
+Evaluators may need to manually inspect:
+
+- Source code
+- Dependencies
+- Controllers and services
+- Database schemas
+- Configuration files
+- Tests
+- Other project artifacts
+
+Traditional viva questions also tend to test generic textbook knowledge instead of the student's actual implementation.
+
+---
 
 ## Solution
 
-SkillProof analyzes student project evidence using Gemini and produces a structured result containing:
+SkillProof creates an evidence pipeline that connects:
 
-- Project information
-- Technologies found in the evidence
-- Student claims
-- Supporting evidence
-- Missing evidence
-- Evidence-backed skills
-- Personalized viva questions
-- Portfolio information
+**Student Claims → Project Evidence → Gemini Reasoning → Evidence Assessment → Personalized Viva → Public Portfolio**
 
-## How It Works
+For every claim, SkillProof evaluates how strongly the submitted evidence supports it.
+
+The system uses four support levels:
+
+- **STRONG** — Direct implementation evidence supports the claim.
+- **MODERATE** — Supporting evidence exists, but implementation is incomplete.
+- **WEAK** — Limited or indirect evidence exists.
+- **UNSUPPORTED** — No meaningful submitted evidence supports the claim.
+
+---
+
+# How It Works
 
 ```text
-Student
-   ↓
-Project Evidence
-   ↓
-Gemini AI Analysis
-   ↓
-Claim ↔ Evidence Analysis
-   ↓
-Skills + Evidence Strength
-   ↓
-Personalized Viva Questions
-   ↓
-SkillProof Profile
-   ↓
-Public Portfolio + QR
+                    STUDENT
+                       │
+                       ▼
+              ┌─────────────────┐
+              │   SUBMIT SCREEN  │
+              │                 │
+              │ Problem         │
+              │ Claims          │
+              │ Contributions   │
+              │ Project Evidence│
+              └────────┬────────┘
+                       │
+                       │ POST /api/analyze
+                       ▼
+              ┌─────────────────┐
+              │ Flask Backend   │
+              │ Python REST API │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Gemini 2.5 Flash│
+              │                 │
+              │ Evidence        │
+              │ Reasoning       │
+              │ Gap Analysis    │
+              │ Viva Generation │
+              └────────┬────────┘
+                       │
+                       ▼
+              ┌─────────────────┐
+              │ Structured      │
+              │ Analysis Result │
+              └────────┬────────┘
+                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+       Firebase Firestore   Frontend Analysis
+              │
+              ▼
+       Public Portfolio
+              │
+              ▼
+          QR Code
 ````
 
-## Evidence Strength
+---
 
-| Strength    | Meaning                               |
-| ----------- | ------------------------------------- |
-| STRONG      | Evidence directly supports the claim  |
-| MODERATE    | Evidence partially supports the claim |
-| WEAK        | Limited evidence supports the claim   |
-| UNSUPPORTED | No meaningful supporting evidence     |
+# Core Evidence Pipeline
 
-## Example
+## 1. Candidate Input
 
-### Student Claim
+The student provides:
+
+* Problem narrative
+* Solution description
+* Technical/project claims
+* Contribution breakdown
+* Project evidence
+* Repository files or GitHub repository information
+
+---
+
+## 2. Evidence Analysis
+
+The Flask backend sends the project information and submitted evidence to Gemini 2.5 Flash.
+
+Gemini analyzes the evidence against the student's claims.
+
+For example:
 
 ```text
-Built Java backend
+Claim:
+"Built Java Spring Boot backend and MySQL schema"
+
+Evidence:
+- pom.xml
+- AttendanceController.java
+- AttendanceRepository.java
+- db/schema.sql
 ```
 
-### Supporting Evidence
+Gemini can identify:
 
 ```text
-Java backend source code
-REST controllers
+pom.xml
+    ↓
+Spring Boot + JPA dependencies
+
+AttendanceController.java
+    ↓
+REST endpoints
+
+AttendanceRepository.java
+    ↓
+Database queries
+
+db/schema.sql
+    ↓
+Tables + foreign keys + enums
 ```
 
-### Result
+The claim can therefore receive:
 
 ```text
 STRONG
 ```
 
-### Personalized Viva Question
+---
+
+# Negative-Claim Detection
+
+A major feature of SkillProof is identifying claims that do not have corresponding implementation evidence.
+
+Example:
 
 ```text
-Why did you choose a REST architecture?
+Claim:
+"Built an ML model predicting low student attendance"
 ```
 
-## Core Output
+But the repository contains:
 
-SkillProof produces structured JSON containing:
+```text
+No ML libraries
+No Python scripts
+No notebooks
+No model weights
+No predictive service
+No controller invoking ML logic
+```
+
+SkillProof can classify the claim as:
+
+```text
+UNSUPPORTED
+```
+
+and explain what evidence is missing.
+
+The system does not invent evidence to make a claim appear stronger.
+
+---
+
+# Strict Support-Level Classification
+
+SkillProof uses four fixed support levels:
+
+| Level           | Meaning                                             |
+| --------------- | --------------------------------------------------- |
+| **STRONG**      | Direct implementation evidence supports the claim   |
+| **MODERATE**    | Evidence exists but implementation is incomplete    |
+| **WEAK**        | Limited or indirect evidence exists                 |
+| **UNSUPPORTED** | No meaningful submitted evidence supports the claim |
+
+This structured classification makes the Gemini response predictable and easier for the frontend to display.
+
+---
+
+# Personalized Viva Generation
+
+SkillProof does not rely only on generic technical questions.
+
+Instead, viva questions are generated from the student's actual project evidence.
+
+For example, if the repository contains an endpoint that performs multiple database queries, SkillProof may generate a question such as:
+
+```text
+How would you optimize this endpoint into a
+single aggregate JPQL query?
+```
+
+This allows evaluators to test whether the student understands the implementation decisions behind their project.
+
+---
+
+# Evidence-Grounded Project Story
+
+After analyzing the evidence, SkillProof can synthesize the project into an evidence-backed technical profile.
+
+The resulting profile can contain:
+
+* Project information
+* Technologies
+* Supported claims
+* Evidence
+* Missing evidence
+* Support levels
+* Skills
+* Personalized viva questions
+* Portfolio information
+
+---
+
+# Structured AI Output
+
+Gemini produces a structured response rather than relying only on free-form text.
+
+Conceptually:
 
 ```json
 {
   "project": {},
   "technologies": [],
-  "claims": [],
+  "claims": [
+    {
+      "claim": "",
+      "support_level": "",
+      "evidence": [],
+      "reason": ""
+    }
+  ],
   "skills": [],
   "viva_questions": [],
   "portfolio": {}
 }
 ```
 
-## Public Portfolio
+The support level is constrained to:
 
-Each analyzed project can be associated with a unique Project ID.
+```text
+STRONG
+MODERATE
+WEAK
+UNSUPPORTED
+```
 
-Example:
+This allows the frontend to reliably render the analysis.
+
+---
+
+# Application Screens
+
+SkillProof currently uses three primary screens:
+
+### 1. Submit
+
+`submit.html`
+
+Collects:
+
+* Problem narrative
+* Solution claims
+* Contribution information
+* Repository/project evidence
+
+### 2. Analysis
+
+`analysis.html`
+
+Displays:
+
+* Claim ↔ Evidence matrix
+* Support levels
+* Missing evidence
+* Evidence reasoning
+* Personalized viva questions
+
+### 3. Portfolio
+
+`portfolio.html`
+
+Displays:
+
+* Evidence-backed project story
+* Project information
+* Supported skills
+* Public portfolio information
+* QR code
+
+---
+
+# Backend
+
+SkillProof uses a lightweight Flask REST backend.
+
+Main analysis endpoint:
+
+```text
+POST /api/analyze
+```
+
+The backend is responsible for:
+
+1. Receiving project information
+2. Preparing the Gemini request
+3. Calling the Gemini API
+4. Processing the structured response
+5. Returning the analysis to the frontend
+6. Connecting the analysis to persistence
+
+The Gemini API key is kept server-side using:
+
+```text
+GEMINI_API_KEY
+```
+
+rather than exposing it in frontend code.
+
+---
+
+# Cloud Persistence
+
+SkillProof uses Firebase Firestore to persist assessments.
+
+Projects are associated with unique identifiers such as:
 
 ```text
 SP-A7K29
 ```
 
-The Project ID can be used to access the project's public portfolio.
+Conceptually:
 
-## QR Code
+```text
+projects/
+   SP-A7K29
+```
 
-A QR code can be generated for the public portfolio so that the profile can be easily shared.
+The application also supports a localStorage fallback for situations where cloud persistence is unavailable.
 
-## Technology Stack
+---
 
-* **Frontend:** HTML / CSS / JavaScript
-* **Backend:** Python
-* **AI:** Gemini API
-* **Database:** Firebase Firestore
-* **QR Code:** QR code library
+# Public Portfolio
 
-## API
+Each analyzed project can be associated with a public portfolio route:
+
+```text
+/p/SP-A7K29
+```
+
+This allows an evaluator or recruiter to access the evidence-backed project profile without going through the submission flow again.
+
+---
+
+# QR Code
+
+SkillProof can generate a QR code pointing to the project's public portfolio.
+
+```text
+QR Code
+   ↓
+/p/SP-A7K29
+   ↓
+Evidence-backed Portfolio
+```
+
+The QR code acts as a simple sharing and distribution mechanism for the portfolio.
+
+---
+
+# Technology Stack
+
+| Layer           | Technology                 |
+| --------------- | -------------------------- |
+| Frontend        | HTML, CSS, JavaScript      |
+| UI Design       | Google Stitch / Material 3 |
+| Styling         | Tailwind CSS               |
+| Backend         | Python + Flask             |
+| AI              | Google Gemini 2.5 Flash    |
+| AI SDK          | Google GenAI SDK           |
+| Database        | Firebase Firestore         |
+| Client Fallback | Browser localStorage       |
+| Distribution    | QR Code                    |
+
+---
+
+# API
+
+### Analyze Project
 
 ```text
 POST /api/analyze
-POST /api/generate-viva
-POST /api/generate-portfolio
-GET  /api/project/<project_id>
-GET  /p/<project_id>
 ```
 
-## Project Flow
+Receives the student's project information and evidence and returns the Gemini-powered assessment.
+
+### Public Portfolio
+
+```text
+GET /p/<project_id>
+```
+
+Example:
+
+```text
+/p/SP-A7K29
+```
+
+---
+
+# Project Flow
 
 ```text
 SUBMIT
    ↓
 ANALYZE
    ↓
-COMPARE
+COMPARE CLAIMS ↔ EVIDENCE
    ↓
-PROVE
+CLASSIFY SUPPORT
    ↓
-EXPLAIN
+IDENTIFY GAPS
    ↓
-SHARE
+GENERATE VIVA
+   ↓
+STORE RESULT
+   ↓
+BUILD PORTFOLIO
+   ↓
+SHARE WITH QR
 ```
 
-## Important Principle
+---
+
+# Team Architecture
+
+SkillProof was developed using four specialized tracks:
+
+### Backend + Gemini API
+
+* Flask REST API
+* Gemini integration
+* API key isolation
+* CORS
+* Backend verification
+
+### Frontend + UI
+
+* Three-screen application
+* Google Stitch / Material 3 design
+* Responsive interface
+* Candidate/session handling
+
+### AI Reasoning + Schema
+
+* Structured Gemini response schema
+* Support-level classification
+* Negative-claim detection
+* Evidence gap analysis
+* Code-grounded viva generation
+* Evidence-grounded project storytelling
+
+### Firebase + Product
+
+* Firestore persistence
+* Project IDs
+* Public portfolio routing
+* QR generation
+* localStorage fallback
+
+---
+
+# Important Principle
 
 SkillProof does **not** claim to prove whether a student is truthful or whether they personally wrote every submitted file.
 
-It evaluates whether the **submitted evidence supports the submitted claims**.
+It evaluates whether the:
 
+**submitted evidence supports the submitted claims.**
+
+```text
+CLAIM
+  ↓
+EVIDENCE
+  ↓
+GEMINI ANALYSIS
+  ↓
+SUPPORT LEVEL
+  ↓
+EXPLANATION
+```
 ```
 ```
